@@ -13,6 +13,7 @@ Msx Game Reader library
   
 Change log
 ===========================
+ - 05/05/2025 Port to macOS (by @kunichiko) 
  - 10/09/2019 Initial commit
 
 TODO 
@@ -21,3 +22,29 @@ TODO
  - add more reversed functions no time to add yet. Basic functionality is already implemented
  - test test test :P
  - generate documentation about it
+
+How to use it
+===========================
+Build Instructions
+1. Install the required library:
+   ```
+   brew install libusb
+   ```
+2. Build the project:
+   ```
+   make
+   ```
+3. Verify that the build was successful:
+   ```
+   ls bin/msxGameReader
+   ```
+   If `bin/msxGameReader` is displayed, the build was successful.
+
+Execution Instructions
+1. To run the program, use the following command:
+   ```
+   sudo ./bin/msxGameReader
+   ```
+   Note: `sudo` may be required to access the USB device. Make sure to connect the USB device before running.
+
+2. If the program fails to read properly, try changing the USB connection. For example, inserting a USB 2.0 hub between the device and your computer may resolve the issue.

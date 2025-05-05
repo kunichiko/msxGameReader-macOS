@@ -18,6 +18,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
  * USA.
  */
+#include <unistd.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <string.h>
@@ -54,55 +55,74 @@ libusb_device **devs;
 
 libusb_device_handle *handle[MsxGameReaderMaxSlot];
 
+void print_endpoint_info(libusb_device_handle *handle) {
+    libusb_device *dev = libusb_get_device(handle);
+    struct libusb_config_descriptor *config;
+    int ret = libusb_get_active_config_descriptor(dev, &config);
+    if (ret != 0) {
+        debugNetPrintf(DEBUG, "[MSXGAMEREADER] error getting config descriptor: %s\n", libusb_error_name(ret));
+        return;
+    }
+
+    for (int i = 0; i < config->bNumInterfaces; i++) {
+        const struct libusb_interface *interface = &config->interface[i];
+        for (int j = 0; j < interface->num_altsetting; j++) {
+            const struct libusb_interface_descriptor *altsetting = &interface->altsetting[j];
+            debugNetPrintf(DEBUG, "[MSXGAMEREADER] Interface %d AltSetting %d has %d endpoints\n", i, j, altsetting->bNumEndpoints);
+            for (int k = 0; k < altsetting->bNumEndpoints; k++) {
+                const struct libusb_endpoint_descriptor *ep = &altsetting->endpoint[k];
+                debugNetPrintf(DEBUG, "[MSXGAMEREADER]   Endpoint Address: 0x%02x, Attributes: 0x%02x, MaxPacketSize: %d\n",
+                               ep->bEndpointAddress, ep->bmAttributes, ep->wMaxPacketSize);
+            }
+        }
+    }
+
+    libusb_free_config_descriptor(config);
+}
+
+
 MsxGameReader *mgr[16];
 void usbCheckDevices(libusb_device *dev)
 {
-	int ret;
-	struct libusb_device_descriptor desc;
-	ret=libusb_get_device_descriptor(dev,&desc);
-	if(ret<0)
-	{
-		debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s error with descriptor 0x%8x %s\n",__func__,ret,libusb_error_name(ret));
-		return;
-	}
-	if(desc.idVendor==MsxGameReaderVendorId && desc.idProduct==MsxGameReaderProductId)
-	{
-		handle[msxGameReaderCount]=NULL;
-		debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s found new Msx GameReader Device number %d\n",__func__,msxGameReaderCount);
-		ret=libusb_open(dev, &handle[msxGameReaderCount]);
-		if(ret==0)
-		{
+    int ret;
+    struct libusb_device_descriptor desc;
+    ret = libusb_get_device_descriptor(dev, &desc);
+    if (ret < 0) {
+        debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s error with descriptor 0x%8x %s\n", __func__, ret, libusb_error_name(ret));
+        return;
+    }
 
+    if (desc.idVendor == MsxGameReaderVendorId && desc.idProduct == MsxGameReaderProductId) {
+        handle[msxGameReaderCount] = NULL;
+        debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s found new Msx GameReader Device number %d\n", __func__, msxGameReaderCount);
+        ret = libusb_open(dev, &handle[msxGameReaderCount]);
+        if (ret == 0) {
+            debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s new handle for Msx GameReader Device number %d\n", __func__, msxGameReaderCount);
+            
+            // エンドポイント情報の表示を追加
+            print_endpoint_info(handle[msxGameReaderCount]);
 
-			debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s new handle for Msx GameReader Device number %d\n",__func__,msxGameReaderCount);
-			mgr[msxGameReaderCount]=(MsxGameReader *)malloc(sizeof(MsxGameReader));
-			if(mgr[msxGameReaderCount]!=NULL)
-			{
-				mgr[msxGameReaderCount]->enabled=false;
-				mgr[msxGameReaderCount]->inserted=false;
-				mgr[msxGameReaderCount]->slot=-1;
-				mgr[msxGameReaderCount]->romType=-1;
-				mgr[msxGameReaderCount]->romSize=0;
-				mgr[msxGameReaderCount]->sramSize=0;
-				mgr[msxGameReaderCount]->handleId=msxGameReaderCount;
-				mgr[msxGameReaderCount]->rom=NULL;
-				mgr[msxGameReaderCount]->sram=NULL;
-				msxGameReaderCount++;
-			}
-			else
-			{
-				debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s  memory error\n",__func__);
-			}
-		}
-		else
-		{
-			debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s error opening handle 0x%8x %s\n",__func__,ret,libusb_error_name(ret));
-		}
-
-		
-		
-	}
+            mgr[msxGameReaderCount] = (MsxGameReader *)malloc(sizeof(MsxGameReader));
+            if (mgr[msxGameReaderCount] != NULL) {
+                mgr[msxGameReaderCount]->enabled = false;
+                mgr[msxGameReaderCount]->inserted = false;
+                mgr[msxGameReaderCount]->slot = -1;
+                mgr[msxGameReaderCount]->romType = -1;
+                mgr[msxGameReaderCount]->romSize = 0;
+                mgr[msxGameReaderCount]->sramSize = 0;
+                mgr[msxGameReaderCount]->handleId = msxGameReaderCount;
+                mgr[msxGameReaderCount]->rom = NULL;
+                mgr[msxGameReaderCount]->sram = NULL;
+                msxGameReaderCount++;
+            } else {
+                debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s memory error\n", __func__);
+            }
+        } else {
+            debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s error opening handle 0x%8x %s\n", __func__, ret, libusb_error_name(ret));
+        }
+    }
 }
+
 void usbInit(int logLevel)
 {
 	int ret;
@@ -118,7 +138,7 @@ void usbInit(int logLevel)
 	}
 	debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s usb stack initialized\n",__func__,ret);
 	libusb_set_debug(context,logLevel);
-	ret=libusb_get_device_list(NULL,&devs);
+	ret=libusb_get_device_list(context,&devs);
 	if(ret<0)
 	{
 		debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s error retrieving usb devices 0x%8x %s\n",__func__,ret,libusb_error_name(ret));
@@ -135,7 +155,7 @@ void usbInit(int logLevel)
 	debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s out\n",__func__);
 
 }
-void usbFinish()
+void usbFinish(void)
 {
 	int i;
 	for(i=0;i<msxGameReaderCount;i++)
@@ -155,7 +175,9 @@ int msxGameReaderSendCommand(libusb_device_handle *handler,uint8_t nCmd,uint16_t
 		case 3:
 		case 4:
 		case 5:
-			ret=libusb_control_transfer(handler,0xC0,nCmd,wValue,wIndex,0,0,0);
+		debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s control_transfer start: cmd=%d val=0x%x idx=0x%x\n", __func__, nCmd, wValue, wIndex);
+		ret = libusb_control_transfer(handler, 0xC0, nCmd, wValue, wIndex, NULL, 0, 1000);
+		debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s control_transfer done: ret=%d\n", __func__, ret);
 			break;
 		default:
 			debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s Unsupported command. (nCmd=%d)\n",__func__,nCmd);
@@ -186,8 +208,9 @@ int msxGameReaderReadFrom(libusb_device_handle *handler,unsigned char *buffer,ui
 	}
 	while(ret==0 && length!=0)
 	{
-		ret=libusb_bulk_transfer(handler,0x82,buffer,length,&numBytesTransfered,0);
-		debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s bulk transfer length=%d bytesTransfered=%d return=%d\n",__func__,length,numBytesTransfered,ret);
+		debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s calling bulk_transfer: endpoint=0x82, length=%d\n", __func__, length);
+		ret = libusb_bulk_transfer(handler, 0x82, buffer, length, &numBytesTransfered, 1000);
+		debugNetPrintf(DEBUG, "[MSXGAMEREADER] %s bulk_transfer done: ret=%d, transferred=%d\n", __func__, ret, numBytesTransfered);
 		length=length-numBytesTransfered;	
 	}
 	if(ret!=0)
@@ -269,7 +292,7 @@ int msxGameReaderWriteTo(libusb_device_handle *handler,unsigned char *buffer,uin
 	}
 	while(ret==0 && length!=0)
 	{
-		ret=libusb_bulk_transfer(handler,0x2,buffer,length,&numBytesTransfered,0);
+		ret=libusb_bulk_transfer(handler,0x2,buffer,length,&numBytesTransfered,1000);
 		debugNetPrintf(DEBUG,"[MSXGAMEREADER] %s bulk transfer length=%d bytesTransfered=%d return=%d\n",__func__,length,numBytesTransfered,ret);
 		length=length-numBytesTransfered;	
 	}
@@ -303,7 +326,7 @@ int msxGameReaderWriteIo(int handleId,unsigned char *buffer,uint16_t address,uin
 	ret=msxGameReaderWriteTo(handle[handleId],buffer,address,length,5);
 	return ret;
 }
-int msxGameReaderInit()
+int msxGameReaderInit(void)
 {
 	int i;
 	int ret;
@@ -974,7 +997,7 @@ int msxGameReaderAnalyzeRomSize(int handleId)
 int msxGameReaderAnalyzeSram(int handleId)
 {
 	int ret;
-	unsigned char kk;
+	unsigned char kk = 0;
 	unsigned char byteWrite;
 	unsigned char byte16k[16384];
 	unsigned char byte16k2[16384];
@@ -982,7 +1005,6 @@ int msxGameReaderAnalyzeSram(int handleId)
 	unsigned char status[3];
 	bool bVar8;
 	unsigned char puVar4;
-	unsigned char *piVar4;
 	unsigned char *piVar5;
 	unsigned char *piVar6;
 	unsigned char *piVar7;
@@ -1952,12 +1974,10 @@ int msxGameReaderReadSramAll(int handleId,unsigned char *buffer)
 	
 }
 
-int main()
+int main(int argc, char **argv)
 {
 
 	int ret;
-	int i;
-	int counter=0;
 	usbInit(3);
 	ret=msxGameReaderInit();
 	if(ret!=0)

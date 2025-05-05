@@ -7,3 +7,5 @@
 *.d
 .DS_Store
 ._*
+*.rom
+msxGameReader
